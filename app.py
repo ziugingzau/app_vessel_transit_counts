@@ -13,12 +13,12 @@ with st.form("inputs"):
 
     INPUT_DATA_FOLDER = st.text_input(
         "Input folder containing .parquet files",
-        value=r"I:\MSI Library\Staff Folders\Jingzhou Zhao\Monthly AIS Data\Containership",
+        value="I:/MSI Library/Staff Folders/Jingzhou Zhao/Monthly AIS Data/Containership",
         help="Provide a full folder path with .parquet files",
     )
     OUTPUT_DATA_FOLDER = st.text_input(
         "Output Excel file path",
-        value=r"C:\Users\jingzhou.zhao\Downloads",
+        value="C:/Users/jingzhou.zhao/Downloads",
         help="Provide a full folder path",
     )
 
