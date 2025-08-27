@@ -145,15 +145,61 @@ if st.session_state.run:
 
     import geopandas as gpd
 
-    st.write("⏳ I am reading the input files!")
-    parquet_files = [f for f in os.listdir(INPUT_DATA_FOLDER) if f.endswith('.parquet')]
+    # st.write("⏳ I am reading the input files!")
+    # parquet_files = [f for f in os.listdir(INPUT_DATA_FOLDER) if f.endswith('.parquet')]
 
+    # dfs = []
+    # for file in parquet_files:
+    #     columns = ["imo", "timestamp", "latitude", "longitude", "destination"]
+    #     df = pq.read_table(os.path.join(INPUT_DATA_FOLDER, file), columns=columns).to_pandas()        
+    #     st.write(f"Reading {file} — min: {df['timestamp'].min()} | max: {df['timestamp'].max()} | rows: {len(df):,}")
+    #     dfs.append(df)
+
+    import os
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    # ---------- Get parquet files (local path OR uploads) ----------
+    use_uploads = False
     dfs = []
-    for file in parquet_files:
-        columns = ["imo", "timestamp", "latitude", "longitude", "destination"]
-        df = pq.read_table(os.path.join(INPUT_DATA_FOLDER, file), columns=columns).to_pandas()        
-        st.write(f"Reading {file} — min: {df['timestamp'].min()} | max: {df['timestamp'].max()} | rows: {len(df):,}")
-        dfs.append(df)
+
+    if INPUT_DATA_FOLDER and os.path.isdir(INPUT_DATA_FOLDER):
+        # Running locally with a real folder path
+        parquet_files = sorted([f for f in os.listdir(INPUT_DATA_FOLDER) if f.lower().endswith(".parquet")])
+        if not parquet_files:
+            st.error("No .parquet files found in the specified input folder.")
+            st.stop()
+
+        for file in parquet_files:
+            fp = os.path.join(INPUT_DATA_FOLDER, file)
+            cols = ["imo", "timestamp", "msg_type", "latitude", "longitude", "destination"]
+            table = pq.read_table(fp, columns=cols)
+            df = table.to_pandas()
+            if "timestamp" in df and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+            st.write(f"Reading {file} — min: {df['timestamp'].min()} | max: {df['timestamp'].max()} | rows: {len(df):,}")
+            dfs.append(df)
+    else:
+        # Cloud (or bad path): ask for uploads instead
+        st.warning(
+            "Input folder not found on this machine. On Streamlit Cloud, Windows paths like `C:\\` or `I:\\` "
+            "aren’t available. Please upload your `.parquet` files below."
+        )
+        uploaded = st.file_uploader("Upload .parquet files", type="parquet", accept_multiple_files=True)
+        use_uploads = True
+        if not uploaded:
+            st.stop()
+
+        for uf in uploaded:
+            table = pq.read_table(uf)
+            df = table.to_pandas()
+            if "timestamp" in df and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+            st.write(f"Reading {uf.name} — min: {df['timestamp'].min()} | max: {df['timestamp'].max()} | rows: {len(df):,}")
+            dfs.append(df)
+
 
     st.write("⏳ I am appending!")
     df_all = pd.concat(dfs, ignore_index=True)
