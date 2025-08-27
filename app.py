@@ -1,48 +1,43 @@
 import streamlit as st
 
-st.set_page_config(page_title="MSI Internal Vessel Transit Counts App", layout="wide")
-st.title("MSI Internal Vessel Transit Counts App")
+st.set_page_config(page_title="Vessel Transit Counts App", layout="wide")
+st.title("📱 Vessel Transit Counts App")
+st.markdown("🎯 Goal: Because a vessel can transit an area multiple times, this app helps you extract all such transits.")
+st.markdown("Step 1: Define a 'BIG_POLYGON' and download the data in '.parquet' format from MSI SEASCAPE")
+st.markdown("Step 2: Define a 'SMALL_POLYGON', and the app will count the transits within this area.")
 
-# ---------------------------
-# Inputs (inside a form)
-# ---------------------------
-with st.form("inputs"):
+# --- init session flags/state ---
+if "run" not in st.session_state:
+    st.session_state.run = False
+if "poly_ready" not in st.session_state:
+    st.session_state.poly_ready = False
 
-    # Folder Paths
-    st.markdown("### Define input and output paths")
+######################################## Part 1 Visualise Polygons ########################################
+with st.form("poly_form"):
 
-    INPUT_DATA_FOLDER = st.text_input(
-        "Input folder containing .parquet files",
-        value="I:/MSI Library/Staff Folders/Jingzhou Zhao/Monthly AIS Data/Containership",
-        help="Provide a full folder path with .parquet files",
-    )
-    OUTPUT_DATA_FOLDER = st.text_input(
-        "Output Excel file path",
-        value="C:/Users/jingzhou.zhao/Downloads",
-        help="Provide a full folder path",
-    )
+    st.markdown("### Define Small and Big Polygons")
+    
 
-    # Polygons
-    st.markdown("### Define Big and Small Polygons")
-
-    big_poly_text = st.text_area(
-        "Enter BIG_POLYGON coordinates (lat, lon per line)",
-        value="9.575993, -80.388079\n9.753340, -79.601293\n8.886929, -79.016116\n8.459045, -79.862967",
-        height=200,
-        help="The default area is the Panama Canal."
-    )
     small_poly_text = st.text_area(
-        "Enter SMALL_POLYGON coordinates (lat, lon per line)",
+        "Enter SMALL_POLYGON coordinates (lat, lon) — you'll count transits inside this area.",
         value="9.310730, -80.011146\n9.312522, -79.810156\n9.107972, -79.714580\n9.028758, -80.063607",
         height=200,
         help="The default area is Gatun Lake in the Panama Canal."
     )
-    submitted = st.form_submit_button("Start running")
 
-if "run" not in st.session_state:
-    st.session_state.run = False
-if submitted:
-    st.session_state.run = True
+    big_poly_text = st.text_area(
+        "Enter BIG_POLYGON coordinates (lat, lon) - same area as your MSI SEASCAPE download.",
+        value="9.575993, -80.388079\n9.753340, -79.601293\n8.886929, -79.016116\n8.459045, -79.862967",
+        height=200,
+        help="The default area is the Panama Canal."
+    )
+
+    poly_submit = st.form_submit_button("Visualise Polygons")
+
+# if "poly_ready" not in st.session_state:
+#     st.session_state.poly_ready = False
+if poly_submit:
+    st.session_state.poly_ready = True
 
 # ---- Parse user input polygons ----
 def parse_coords(text):
@@ -64,10 +59,10 @@ from shapely.geometry import Polygon
 big_poly = Polygon([(lon, lat) for lat, lon in BIG_POLYGON])
 small_poly = Polygon([(lon, lat) for lat, lon in SMALL_POLYGON])
 
+# plot
 import folium
 import numpy as np
 from shapely.geometry import mapping
-
 def plot_two_polygons(big_poly, small_poly, zoom_start=8):
     # Center map between both polygons
     all_coords = list(big_poly.exterior.coords) + list(small_poly.exterior.coords)
@@ -111,33 +106,51 @@ def plot_two_polygons(big_poly, small_poly, zoom_start=8):
     folium.LayerControl(collapsed=False).add_to(m)
     return m
 
+from streamlit_folium import st_folium
+if st.session_state.poly_ready:
+    st.subheader("Area Preview:")
+    st.caption("• Ensure the MSI Seascape data fully covers the Big Polygon.\n• The Small Polygon should not include berths/ports.")
+    st_folium(plot_two_polygons(big_poly, small_poly, zoom_start=8), width=700, height=500)
+
+######################################## Part 2 Calculate ########################################
+
+with st.form("run_form"):
+
+    # Folder Paths
+    st.markdown("### Define input and output paths")
+
+    INPUT_DATA_FOLDER = st.text_input(
+        "Input folder containing .parquet files",
+        value="I:/MSI Library/Staff Folders/Jingzhou Zhao/Monthly AIS Data/Containership",
+        help="Provide a full folder path with .parquet files",
+    )
+    OUTPUT_DATA_FOLDER = st.text_input(
+        "Output Excel file path",
+        value="C:/Users/jingzhou.zhao/Downloads",
+        help="Provide a full folder path",
+    )
+    run_submit  = st.form_submit_button("Start running")
+
+if run_submit:
+    st.session_state.run = True
+
 if st.session_state.run:
 
-    # --- Plot ---
-    from streamlit_folium import st_folium
-    st.subheader("Area Preview:")
-    st.subheader("- Please ensure that the data you downloaded from MSI SEASCAPE fully covers the Big Polygon.")
-    st.subheader("- Please draw a well-defined Small Polygon that doesn't cover any ports or berths.")
-    m = plot_two_polygons(big_poly, small_poly, zoom_start=8)
-    st_folium(m, width=700, height=500)
-
-    ##################################################################################################################
-    # Append Data
+    ##### Append Data #####
     import pandas as pd
     pd.set_option("display.max_rows", 500)
 
     import os
     import pyarrow.parquet as pq
-    import matplotlib.pyplot as plt
-    import plotly.express as px
 
     import geopandas as gpd
 
+    st.write("⏳ I am reading the input files!")
     parquet_files = [f for f in os.listdir(INPUT_DATA_FOLDER) if f.endswith('.parquet')]
 
     dfs = []
     for file in parquet_files:
-        columns = ["imo", "timestamp", "msg_type", "latitude", "longitude", "destination"]
+        columns = ["imo", "timestamp", "latitude", "longitude", "destination"]
         df = pq.read_table(os.path.join(INPUT_DATA_FOLDER, file), columns=columns).to_pandas()        
         st.write(f"Reading {file} — min: {df['timestamp'].min()} | max: {df['timestamp'].max()} | rows: {len(df):,}")
         dfs.append(df)
@@ -158,12 +171,9 @@ if st.session_state.run:
     gdf = gdf[gdf.within(big_poly)]
     st.write(f"✅ {len(gdf)} rows were filtered within your Big Polygon.")
 
-    ##################################################################################################################
-    # Process Data
+    ##### Process Data #####
     import pandas as pd
     import geopandas as gpd
-    from shapely.geometry import Polygon
-    from shapely.geometry import Point
 
     # --- Prep data ---
     gdf_clean = gdf.copy()
